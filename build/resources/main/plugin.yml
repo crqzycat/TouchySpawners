@@ -1,0 +1,8 @@
+name: Touchy Spawners
+version: '1.0'
+description: Mine spawners with Silk Touch – place them back as the same mob type.
+author: crqzycat
+
+main: touchy_spawners.touchySpawners.TouchySpawners
+api-version: '1.21'
+load: POSTWORLD
