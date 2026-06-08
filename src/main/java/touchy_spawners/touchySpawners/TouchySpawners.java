@@ -40,24 +40,18 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         ItemStack tool = player.getInventory().getItemInMainHand();
         if (!hasSilkTouch(tool)) return;
 
-        // Prevent vanilla drop behaviour
         event.setDropItems(false);
         event.setExpToDrop(0);
 
-        // Read the mob type from the spawner
         CreatureSpawner cs = (CreatureSpawner) block.getState();
         EntityType spawnedType = cs.getSpawnedType();
 
-        // Build the spawner item with the mob type stored in BlockStateMeta
+        // Build spawner item — no custom_name, only BlockStateMeta to avoid the warning
         ItemStack spawnerItem = new ItemStack(Material.SPAWNER);
         BlockStateMeta meta = (BlockStateMeta) spawnerItem.getItemMeta();
         CreatureSpawner spawnerState = (CreatureSpawner) meta.getBlockState();
         spawnerState.setSpawnedType(spawnedType);
         meta.setBlockState(spawnerState);
-
-        // Display name so the player can see what type it is
-        String mobName = formatMobName(spawnedType);
-        meta.setDisplayName("§f" + mobName + " Spawner");
         spawnerItem.setItemMeta(meta);
 
         block.getWorld().dropItemNaturally(block.getLocation(), spawnerItem);
@@ -76,7 +70,6 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         EntityType storedType = storedState.getSpawnedType();
         if (storedType == null) return;
 
-        // Apply the stored type to the freshly placed spawner
         Block placed = event.getBlockPlaced();
         if (placed.getState() instanceof CreatureSpawner newSpawner) {
             newSpawner.setSpawnedType(storedType);
@@ -84,24 +77,8 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         }
     }
 
-    // --- helpers ---
-
     private boolean hasSilkTouch(ItemStack tool) {
         if (tool == null || tool.getType() == Material.AIR) return false;
         return tool.containsEnchantment(Enchantment.SILK_TOUCH);
-    }
-
-    private String formatMobName(EntityType type) {
-        if (type == null) return "Unknown";
-        String raw = type.name().replace("_", " ");
-        StringBuilder sb = new StringBuilder();
-        for (String word : raw.split(" ")) {
-            if (!word.isEmpty()) {
-                sb.append(Character.toUpperCase(word.charAt(0)))
-                  .append(word.substring(1).toLowerCase())
-                  .append(" ");
-            }
-        }
-        return sb.toString().trim();
     }
 }
