@@ -1,0 +1,6 @@
+name: Touchy Spawners
+version: '${version}'
+
+main: touchy_spawners.touchySpawners.TouchySpawners
+api-version: '1.21.11'
+load: POSTWORLD
