@@ -1,0 +1,5 @@
+# TouchySpawners Configuration
+
+# Allow players to stack spawners by right-clicking with the same spawner type.
+# Default: false
+stackable-spawners: false

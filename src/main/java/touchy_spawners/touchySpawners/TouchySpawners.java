@@ -36,8 +36,13 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
     public void onEnable() {
         stackKey = new NamespacedKey(this, "stack_count");
         labelKey = new NamespacedKey(this, "spawner_label");
+        saveDefaultConfig();
         getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("TouchySpawners enabled!");
+    }
+
+    private boolean isStackingEnabled() {
+        return getConfig().getBoolean("stackable-spawners", false);
     }
 
     @Override
@@ -72,6 +77,7 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onRightClick(PlayerInteractEvent event) {
+        if (!isStackingEnabled()) return;
         if (event.getHand() != EquipmentSlot.HAND) return;
         if (!event.getAction().isRightClick()) return;
 
