@@ -3,6 +3,7 @@ package touchy_spawners.touchySpawners;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -30,7 +31,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-public final class TouchySpawners extends JavaPlugin implements Listener, CommandExecutor {
+public final class TouchySpawners extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
     private NamespacedKey stackKey;
     private NamespacedKey labelKey;
@@ -41,6 +42,7 @@ public final class TouchySpawners extends JavaPlugin implements Listener, Comman
         labelKey = new NamespacedKey(this, "spawner_label");
         saveDefaultConfig();
         getCommand("touchyspawners").setExecutor(this);
+        getCommand("touchyspawners").setTabCompleter(this);
         getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("TouchySpawners enabled!");
     }
@@ -58,6 +60,17 @@ public final class TouchySpawners extends JavaPlugin implements Listener, Comman
         }
         sender.sendMessage("§eUsage: /touchyspawners reload");
         return true;
+    }
+
+    @Override
+    public java.util.List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
+        if (!sender.hasPermission("touchyspawners.admin")) return java.util.Collections.emptyList();
+        if (args.length == 1) {
+            return java.util.List.of("reload").stream()
+                .filter(s -> s.startsWith(args[0].toLowerCase()))
+                .collect(java.util.stream.Collectors.toList());
+        }
+        return java.util.Collections.emptyList();
     }
 
     private boolean isStackingEnabled() {
