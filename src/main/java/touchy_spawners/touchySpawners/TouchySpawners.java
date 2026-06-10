@@ -102,6 +102,10 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         CreatureSpawner toUpdate = (CreatureSpawner) block.getState();
         toUpdate.getPersistentDataContainer().set(stackKey, PersistentDataType.INTEGER, newCount);
         toUpdate.setSpawnCount(4 * newCount);
+        toUpdate.setMaxNearbyEntities(16 * newCount);
+        // Speed up spawn delay slightly per stack (vanilla default: min=200, max=800 ticks)
+        toUpdate.setMinSpawnDelay(Math.max(20, 200 / newCount));
+        toUpdate.setMaxSpawnDelay(Math.max(40, 800 / newCount));
         toUpdate.update(true, false);
 
         if (player.getGameMode() != GameMode.CREATIVE) {
