@@ -30,7 +30,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 public final class TouchySpawners extends JavaPlugin implements Listener {
 
     private NamespacedKey stackKey;
-    private NamespacedKey labelKey; // marks our label ArmorStands
+    private NamespacedKey labelKey;
 
     @Override
     public void onEnable() {
@@ -46,7 +46,6 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
     }
 
     // ── PLACE ────────────────────────────────────────────────────────────────
-    // When the player places a spawner item that has a stored mob type, restore it.
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSpawnerPlace(BlockPlaceEvent event) {
@@ -63,13 +62,13 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         Block placed = event.getBlockPlaced();
         if (placed.getState() instanceof CreatureSpawner newSpawner) {
             newSpawner.setSpawnedType(storedType);
-            // Fresh placement always count = 1, no label needed yet
             newSpawner.getPersistentDataContainer().set(stackKey, PersistentDataType.INTEGER, 1);
+            // spawnCount stays at vanilla default (4) for a single spawner — no change needed
             newSpawner.update(true, false);
         }
     }
 
-    // ── STACK (right-click with same spawner type) ────────────────────────────
+    // ── STACK ────────────────────────────────────────────────────────────────
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onRightClick(PlayerInteractEvent event) {
@@ -84,11 +83,9 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         if (hand.getType() != Material.SPAWNER) return;
         if (!hand.hasItemMeta()) return;
 
-        // Get mob type from the block
         CreatureSpawner blockSpawner = (CreatureSpawner) block.getState();
         EntityType blockType = blockSpawner.getSpawnedType();
 
-        // Get mob type from the item in hand
         if (!(hand.getItemMeta() instanceof BlockStateMeta meta)) return;
         if (!meta.hasBlockState()) return;
         if (!(meta.getBlockState() instanceof CreatureSpawner itemState)) return;
@@ -98,19 +95,19 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
 
         event.setCancelled(true);
 
-        // Increment stack count on block
         int current = getBlockStackCount(blockSpawner);
         int newCount = current + 1;
-        blockSpawner.getPersistentDataContainer().set(stackKey, PersistentDataType.INTEGER, newCount);
-        blockSpawner.setSpawnCount(4 * newCount);
-        blockSpawner.update(true, false);
 
-        // Consume one item from hand
+        // Re-fetch state to apply changes
+        CreatureSpawner toUpdate = (CreatureSpawner) block.getState();
+        toUpdate.getPersistentDataContainer().set(stackKey, PersistentDataType.INTEGER, newCount);
+        toUpdate.setSpawnCount(4 * newCount);
+        toUpdate.update(true, false);
+
         if (player.getGameMode() != GameMode.CREATIVE) {
             hand.setAmount(hand.getAmount() - 1);
         }
 
-        // Update label
         updateLabel(block, newCount);
     }
 
@@ -120,6 +117,9 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
     public void onSpawnerBreak(BlockBreakEvent event) {
         Block block = event.getBlock();
         if (block.getType() != Material.SPAWNER) return;
+
+        // Always remove the label — regardless of gamemode or tool
+        removeLabel(block);
 
         Player player = event.getPlayer();
         if (player.getGameMode() == GameMode.CREATIVE) return;
@@ -134,22 +134,17 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         EntityType spawnedType = cs.getSpawnedType();
         int count = getBlockStackCount(cs);
 
-        // Remove label if present
-        removeLabel(block);
-
-        // Drop one spawner item per stacked count
         ItemStack drop = buildSpawnerItem(spawnedType);
         drop.setAmount(count);
         block.getWorld().dropItemNaturally(block.getLocation(), drop);
     }
 
-    // ── LABEL HELPERS ────────────────────────────────────────────────────────
+    // ── HELPERS ──────────────────────────────────────────────────────────────
 
     private void updateLabel(Block block, int count) {
         removeLabel(block);
-        if (count <= 1) return; // no label for a single spawner
+        if (count <= 1) return;
 
-        // Spawn invisible marker ArmorStand slightly above the block center
         Location loc = block.getLocation().add(0.5, 0.85, 0.5);
         ArmorStand as = (ArmorStand) block.getWorld().spawnEntity(loc, EntityType.ARMOR_STAND);
         as.setInvisible(true);
@@ -159,20 +154,16 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         as.setCanPickupItems(false);
         as.customName(Component.text(count + "x Spawner").color(NamedTextColor.AQUA));
         as.setCustomNameVisible(true);
-        // Tag it so we can find/remove it later
         as.getPersistentDataContainer().set(labelKey, PersistentDataType.INTEGER, 1);
     }
 
     private void removeLabel(Block block) {
         Location center = block.getLocation().add(0.5, 0.85, 0.5);
-        // Search nearby entities for our label stand
         block.getWorld().getNearbyEntities(center, 0.6, 0.6, 0.6).stream()
             .filter(e -> e instanceof ArmorStand)
             .filter(e -> e.getPersistentDataContainer().has(labelKey, PersistentDataType.INTEGER))
             .forEach(Entity::remove);
     }
-
-    // ── ITEM / PDC HELPERS ───────────────────────────────────────────────────
 
     private ItemStack buildSpawnerItem(EntityType type) {
         ItemStack item = new ItemStack(Material.SPAWNER);
