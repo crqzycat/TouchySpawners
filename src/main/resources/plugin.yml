@@ -6,3 +6,15 @@ author: crqzycat
 main: touchy_spawners.touchySpawners.TouchySpawners
 api-version: '1.21'
 load: POSTWORLD
+
+commands:
+  touchyspawners:
+    description: TouchySpawners admin commands
+    usage: /touchyspawners reload
+    permission: touchyspawners.admin
+    aliases: [ts]
+
+permissions:
+  touchyspawners.admin:
+    description: Access to TouchySpawners admin commands
+    default: op

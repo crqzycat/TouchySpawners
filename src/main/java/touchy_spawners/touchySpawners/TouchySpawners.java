@@ -1,5 +1,8 @@
 package touchy_spawners.touchySpawners;
 
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -27,7 +30,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-public final class TouchySpawners extends JavaPlugin implements Listener {
+public final class TouchySpawners extends JavaPlugin implements Listener, CommandExecutor {
 
     private NamespacedKey stackKey;
     private NamespacedKey labelKey;
@@ -37,8 +40,24 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         stackKey = new NamespacedKey(this, "stack_count");
         labelKey = new NamespacedKey(this, "spawner_label");
         saveDefaultConfig();
+        getCommand("touchyspawners").setExecutor(this);
         getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("TouchySpawners enabled!");
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
+            if (!sender.hasPermission("touchyspawners.admin")) {
+                sender.sendMessage("§cYou don't have permission to do this.");
+                return true;
+            }
+            reloadConfig();
+            sender.sendMessage("§aTouchySpawners config reloaded.");
+            return true;
+        }
+        sender.sendMessage("§eUsage: /touchyspawners reload");
+        return true;
     }
 
     private boolean isStackingEnabled() {
