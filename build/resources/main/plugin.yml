@@ -1,6 +1,6 @@
 name: TouchySpawners
 version: '1.0'
-description: Mine spawners with Silk Touch – place them back as the same mob type.
+description: Mine spawners and trial spawners with Silk Touch.
 author: crqzycat
 
 main: touchy_spawners.touchySpawners.TouchySpawners
