@@ -1,11 +1,14 @@
 package touchy_spawners.touchySpawners;
 
 import org.bukkit.GameMode;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Block;
 import org.bukkit.block.CreatureSpawner;
 import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -13,6 +16,8 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BlockStateMeta;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -21,22 +26,18 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
-
-import java.util.List;
 
 public final class TouchySpawners extends JavaPlugin implements Listener {
 
     private NamespacedKey stackKey;
-
-    // Base vanilla spawn count — we multiply this by the stack size
-    private static final int BASE_SPAWN_COUNT = 4;
+    private NamespacedKey labelKey; // marks our label ArmorStands
 
     @Override
     public void onEnable() {
         stackKey = new NamespacedKey(this, "stack_count");
+        labelKey = new NamespacedKey(this, "spawner_label");
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("TouchySpawners enabled – Silk Touch + stacking active!");
+        getLogger().info("TouchySpawners enabled!");
     }
 
     @Override
@@ -44,7 +45,76 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
         getLogger().info("TouchySpawners disabled.");
     }
 
-    // ── BREAKING ─────────────────────────────────────────────────────────────
+    // ── PLACE ────────────────────────────────────────────────────────────────
+    // When the player places a spawner item that has a stored mob type, restore it.
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onSpawnerPlace(BlockPlaceEvent event) {
+        ItemStack item = event.getItemInHand();
+        if (item.getType() != Material.SPAWNER) return;
+        if (!item.hasItemMeta()) return;
+        if (!(item.getItemMeta() instanceof BlockStateMeta meta)) return;
+        if (!meta.hasBlockState()) return;
+        if (!(meta.getBlockState() instanceof CreatureSpawner storedState)) return;
+
+        EntityType storedType = storedState.getSpawnedType();
+        if (storedType == null) return;
+
+        Block placed = event.getBlockPlaced();
+        if (placed.getState() instanceof CreatureSpawner newSpawner) {
+            newSpawner.setSpawnedType(storedType);
+            // Fresh placement always count = 1, no label needed yet
+            newSpawner.getPersistentDataContainer().set(stackKey, PersistentDataType.INTEGER, 1);
+            newSpawner.update(true, false);
+        }
+    }
+
+    // ── STACK (right-click with same spawner type) ────────────────────────────
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onRightClick(PlayerInteractEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND) return;
+        if (!event.getAction().isRightClick()) return;
+
+        Block block = event.getClickedBlock();
+        if (block == null || block.getType() != Material.SPAWNER) return;
+
+        Player player = event.getPlayer();
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand.getType() != Material.SPAWNER) return;
+        if (!hand.hasItemMeta()) return;
+
+        // Get mob type from the block
+        CreatureSpawner blockSpawner = (CreatureSpawner) block.getState();
+        EntityType blockType = blockSpawner.getSpawnedType();
+
+        // Get mob type from the item in hand
+        if (!(hand.getItemMeta() instanceof BlockStateMeta meta)) return;
+        if (!meta.hasBlockState()) return;
+        if (!(meta.getBlockState() instanceof CreatureSpawner itemState)) return;
+        EntityType itemType = itemState.getSpawnedType();
+
+        if (blockType == null || itemType == null || blockType != itemType) return;
+
+        event.setCancelled(true);
+
+        // Increment stack count on block
+        int current = getBlockStackCount(blockSpawner);
+        int newCount = current + 1;
+        blockSpawner.getPersistentDataContainer().set(stackKey, PersistentDataType.INTEGER, newCount);
+        blockSpawner.setSpawnCount(4 * newCount);
+        blockSpawner.update(true, false);
+
+        // Consume one item from hand
+        if (player.getGameMode() != GameMode.CREATIVE) {
+            hand.setAmount(hand.getAmount() - 1);
+        }
+
+        // Update label
+        updateLabel(block, newCount);
+    }
+
+    // ── BREAK ────────────────────────────────────────────────────────────────
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onSpawnerBreak(BlockBreakEvent event) {
@@ -62,111 +132,56 @@ public final class TouchySpawners extends JavaPlugin implements Listener {
 
         CreatureSpawner cs = (CreatureSpawner) block.getState();
         EntityType spawnedType = cs.getSpawnedType();
+        int count = getBlockStackCount(cs);
 
-        // How many spawners are stacked in this block?
-        int existingStack = getBlockStackCount(cs);
+        // Remove label if present
+        removeLabel(block);
 
-        // Check if the player already holds the same spawner type — merge if so
-        ItemStack inHand = player.getInventory().getItemInMainHand();
-        // inHand is the tool here; check offhand and inventory instead
-        ItemStack merged = tryMergeIntoInventory(player, spawnedType, existingStack);
-        if (merged == null) {
-            // Nothing to merge into — drop a new item
-            ItemStack drop = buildSpawnerItem(spawnedType, existingStack);
-            block.getWorld().dropItemNaturally(block.getLocation(), drop);
-        }
-        // If merged, item was already updated in inventory — no drop needed
+        // Drop one spawner item per stacked count
+        ItemStack drop = buildSpawnerItem(spawnedType);
+        drop.setAmount(count);
+        block.getWorld().dropItemNaturally(block.getLocation(), drop);
     }
 
-    // ── PLACING ──────────────────────────────────────────────────────────────
+    // ── LABEL HELPERS ────────────────────────────────────────────────────────
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onSpawnerPlace(BlockPlaceEvent event) {
-        ItemStack item = event.getItemInHand();
-        if (item.getType() != Material.SPAWNER) return;
-        if (!item.hasItemMeta()) return;
+    private void updateLabel(Block block, int count) {
+        removeLabel(block);
+        if (count <= 1) return; // no label for a single spawner
 
-        if (!(item.getItemMeta() instanceof BlockStateMeta meta)) return;
-        if (!meta.hasBlockState()) return;
-        if (!(meta.getBlockState() instanceof CreatureSpawner storedState)) return;
-
-        EntityType storedType = storedState.getSpawnedType();
-        if (storedType == null) return;
-
-        int stackCount = getItemStackCount(item);
-
-        Block placed = event.getBlockPlaced();
-        if (placed.getState() instanceof CreatureSpawner newSpawner) {
-            newSpawner.setSpawnedType(storedType);
-            newSpawner.setSpawnCount(BASE_SPAWN_COUNT * stackCount);
-            // Store stack count in the block too so breaking it gives back the right count
-            newSpawner.getPersistentDataContainer().set(stackKey, PersistentDataType.INTEGER, stackCount);
-            newSpawner.update(true, false);
-        }
+        // Spawn invisible marker ArmorStand slightly above the block center
+        Location loc = block.getLocation().add(0.5, 0.85, 0.5);
+        ArmorStand as = (ArmorStand) block.getWorld().spawnEntity(loc, EntityType.ARMOR_STAND);
+        as.setInvisible(true);
+        as.setGravity(false);
+        as.setSmall(true);
+        as.setMarker(true);
+        as.setCanPickupItems(false);
+        as.customName(Component.text(count + "x Spawner").color(NamedTextColor.AQUA));
+        as.setCustomNameVisible(true);
+        // Tag it so we can find/remove it later
+        as.getPersistentDataContainer().set(labelKey, PersistentDataType.INTEGER, 1);
     }
 
-    // ── HELPERS ───────────────────────────────────────────────────────────────
-
-    /**
-     * Try to find a matching spawner item in the player's inventory and add
-     * the incoming stack count to it. Returns the updated ItemStack or null
-     * if no matching item was found.
-     */
-    private ItemStack tryMergeIntoInventory(Player player, EntityType type, int incomingCount) {
-        for (ItemStack inv : player.getInventory().getContents()) {
-            if (inv == null || inv.getType() != Material.SPAWNER) continue;
-            if (!inv.hasItemMeta()) continue;
-            if (!(inv.getItemMeta() instanceof BlockStateMeta meta)) continue;
-            if (!meta.hasBlockState()) continue;
-            if (!(meta.getBlockState() instanceof CreatureSpawner cs)) continue;
-            if (cs.getSpawnedType() != type) continue;
-
-            // Same type found — merge
-            int current = getItemStackCount(inv);
-            int newCount = current + incomingCount;
-            setItemStackCount(inv, newCount);
-            return inv;
-        }
-        return null;
+    private void removeLabel(Block block) {
+        Location center = block.getLocation().add(0.5, 0.85, 0.5);
+        // Search nearby entities for our label stand
+        block.getWorld().getNearbyEntities(center, 0.6, 0.6, 0.6).stream()
+            .filter(e -> e instanceof ArmorStand)
+            .filter(e -> e.getPersistentDataContainer().has(labelKey, PersistentDataType.INTEGER))
+            .forEach(Entity::remove);
     }
 
-    private ItemStack buildSpawnerItem(EntityType type, int count) {
+    // ── ITEM / PDC HELPERS ───────────────────────────────────────────────────
+
+    private ItemStack buildSpawnerItem(EntityType type) {
         ItemStack item = new ItemStack(Material.SPAWNER);
         BlockStateMeta meta = (BlockStateMeta) item.getItemMeta();
-
         CreatureSpawner state = (CreatureSpawner) meta.getBlockState();
         state.setSpawnedType(type);
         meta.setBlockState(state);
-
-        // Stack count in PDC
-        meta.getPersistentDataContainer().set(stackKey, PersistentDataType.INTEGER, count);
-
-        // Lore showing stack size — no custom_name to avoid warnings
-        updateLore(meta, count);
-
         item.setItemMeta(meta);
         return item;
-    }
-
-    private void setItemStackCount(ItemStack item, int count) {
-        if (!(item.getItemMeta() instanceof BlockStateMeta meta)) return;
-        meta.getPersistentDataContainer().set(stackKey, PersistentDataType.INTEGER, count);
-        updateLore(meta, count);
-        item.setItemMeta(meta);
-    }
-
-    private void updateLore(BlockStateMeta meta, int count) {
-        Component loreLine = Component.text("Stacked: " + count + "x")
-                .color(NamedTextColor.GRAY)
-                .decoration(TextDecoration.ITALIC, false);
-        meta.lore(List.of(loreLine));
-    }
-
-    private int getItemStackCount(ItemStack item) {
-        if (!item.hasItemMeta()) return 1;
-        PersistentDataContainer pdc = item.getItemMeta().getPersistentDataContainer();
-        Integer val = pdc.get(stackKey, PersistentDataType.INTEGER);
-        return val != null ? val : 1;
     }
 
     private int getBlockStackCount(CreatureSpawner cs) {
