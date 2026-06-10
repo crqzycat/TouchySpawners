@@ -3,3 +3,7 @@
 # Allow players to stack spawners by right-clicking with the same spawner type.
 # Default: false
 stackable-spawners: false
+
+# Maximum number of spawners that can be stacked on one block.
+# Default: 4
+max-stack-size: 4

@@ -121,6 +121,13 @@ public final class TouchySpawners extends JavaPlugin implements Listener, Comman
         event.setCancelled(true);
 
         int current = getBlockStackCount(blockSpawner);
+        int maxStack = getConfig().getInt("max-stack-size", 4);
+
+        if (current >= maxStack) {
+            player.sendMessage("§cThis spawner is already at the maximum stack size of §e" + maxStack + "§c.");
+            return;
+        }
+
         int newCount = current + 1;
 
         // Re-fetch state to apply changes
